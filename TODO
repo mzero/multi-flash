@@ -1,0 +1,35 @@
+
+
+== BAISC FEATURES ==
+
+[-] mount as a USB drive
+	[x] writes to flash
+	[] formats flash as FAT (compatible with CircuitPython we hope)
+		[] writes all the needed stuff to keep mac happy
+
+[x] What to Flash
+	[x] look for files of the form boot.*\.bin (case insensitive) for boot
+	[x] look for files of the form app.*\.bin (case insensitive) for applciation
+	[x] one or both, depending on what is there
+
+[] Flash Start
+	[] button pressed
+	[] connector ground for sensing connection (don't forget to pause)
+
+[] Indicators
+	[] what
+		[] waiting
+		[] percentage complete
+		[] percentage verified
+		[] done
+	[] how
+		[] OLED
+		[] 10 RGB leds
+		[] red LED
+		[] speaker
+
+[] text output
+	[] via Serial
+	[] via OLED
+
+
