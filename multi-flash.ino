@@ -40,6 +40,14 @@ devices. It works like this:
 #define MF_OLED_FEATHERWING
 
 
+// CONFIGURAATION MACROS
+
+#define TARGET_SWDIO 10
+#define TARGET_SWCLK 11
+#define TARGET_SWRST 12
+
+
+
 
 /* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
 
@@ -48,13 +56,16 @@ devices. It works like this:
 
 #include <SPI.h>
 #include <SdFat.h>
+
+#include <Adafruit_DAP.h>
 #include <Adafruit_SPIFlash.h>
 #include <Adafruit_TinyUSB.h>
 
 #ifdef MF_OLED_FEATHERWING
+#include <Wire.h>
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Wire.h>
 #endif
 
 
@@ -77,14 +88,53 @@ Adafruit_SPIFlash flash(&flashTransport);
 
 /* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
 
+template< typename T >
+T sizeInK(T s) { return (s + 1023) / 1024; }
+
+
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
+
+enum struct Event {
+  idle,
+  startFlash
+};
+
 class Interface {
 public:
   virtual void setup() { }
-  virtual void loop() { }
+  virtual Event loop() { return Event::idle; }
 
   virtual void startMsg(const char* msg) { }
   virtual void statusMsg(const char* msg) { }
   virtual void errorMsg(const char* msg) { }
+
+  void startMsgf(const char* fmt, ... ) {
+    char buf[128];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    startMsg(buf);
+  }
+
+  void statusMsgf(const char* fmt, ... ) {
+    char buf[128];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    statusMsg(buf);
+  }
+
+  void errorMsgf(const char* fmt, ... ) {
+    char buf[128];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    errorMsg(buf);
+  }
+
 
   virtual void binaries(
     size_t bootSize, const char* bootName,
@@ -126,13 +176,10 @@ public:
     size_t bootSize, const char* bootName,
     size_t appSize, const char* appName)
   {
-    bootSize = (bootSize + 1023) / 1024;
-    appSize = (appSize + 1023) / 1024;
-
-    if (bootSize > 0) Serial.printf("> boot: %3dk %s\n", bootSize, bootName);
+    if (bootSize > 0) Serial.printf("> boot: %3dk %s\n", sizeInK(bootSize), bootName);
     else              Serial.printf("> boot: ---  no binary\n");
 
-    if (appSize > 0)  Serial.printf("> app:  %3dk %s\n", appSize, appName);
+    if (appSize > 0)  Serial.printf("> app:  %3dk %s\n", sizeInK(appSize), appName);
     else              Serial.printf("> app:  ---  no binary\n");
   }
 };
@@ -145,6 +192,36 @@ SerialInterface serialInterface;
 // FEATURE HARDWARE
 
 #ifdef MF_OLED_FEATHERWING
+
+
+// OLED FeatherWing buttons map to different pins depending on board:
+  #if defined(ESP8266)
+    #define OLED_FEATHERWING_BUTTON_A  0
+    #define OLED_FEATHERWING_BUTTON_B 16
+    #define OLED_FEATHERWING_BUTTON_C  2
+  #elif defined(ESP32)
+    #define OLED_FEATHERWING_BUTTON_A 15
+    #define OLED_FEATHERWING_BUTTON_B 32
+    #define OLED_FEATHERWING_BUTTON_C 14
+  #elif defined(ARDUINO_STM32_FEATHER)
+    #define OLED_FEATHERWING_BUTTON_A PA15
+    #define OLED_FEATHERWING_BUTTON_B PC7
+    #define OLED_FEATHERWING_BUTTON_C PC5
+  #elif defined(TEENSYDUINO)
+    #define OLED_FEATHERWING_BUTTON_A  4
+    #define OLED_FEATHERWING_BUTTON_B  3
+    #define OLED_FEATHERWING_BUTTON_C  8
+  #elif defined(ARDUINO_FEATHER52832)
+    #define OLED_FEATHERWING_BUTTON_A 31
+    #define OLED_FEATHERWING_BUTTON_B 30
+    #define OLED_FEATHERWING_BUTTON_C 27
+  #else // 32u4, M0, M4, nrf52840 and 328p
+    #define OLED_FEATHERWING_BUTTON_A  9
+    #define OLED_FEATHERWING_BUTTON_B  6
+    #define OLED_FEATHERWING_BUTTON_C  5
+  #endif
+
+
 
 class OledFeatherwing : public Interface {
 public:
@@ -161,6 +238,29 @@ public:
 
     display.println("Multi-Flash");
     display.display();
+
+    pinMode(OLED_FEATHERWING_BUTTON_A, INPUT_PULLUP);
+    lastButtonState = HIGH;
+    buttonValidAt = 0;
+  }
+
+  Event loop() {
+    auto b = digitalRead(OLED_FEATHERWING_BUTTON_A);
+    if (b == lastButtonState) {
+      if (buttonValidAt > 0) {
+        if (buttonValidAt <= millis()) {
+          buttonValidAt = 0;
+          if (b == LOW) {
+            return Event::startFlash;
+          }
+        } // else still waiting for valid time
+      } // else long since reported this
+    } else {
+      lastButtonState = b;
+      buttonValidAt = millis() + 50; // debounce time
+    }
+
+    return Event::idle;
   }
 
   void startMsg(const char* msg)  { textLine(1, false, msg); }
@@ -178,11 +278,13 @@ public:
 private:
   Adafruit_SSD1306 display = Adafruit_SSD1306(128, 32, &Wire);
 
+  int lastButtonState;
+  uint32_t buttonValidAt;
+
   void binaryLine(int line, const char* type, size_t size, const char* name) {
     char s[64];
 
-    size = (size + 1023) / 1024;
-    if (size > 0) snprintf(s, sizeof(s), "%3dk %s\n", size, name);
+    if (size > 0) snprintf(s, sizeof(s), "%3dk %s\n", sizeInK(size), name);
     else          snprintf(s, sizeof(s), "---  no %s binary\n", type);
 
     textLine(line, false, s);
@@ -210,7 +312,13 @@ public:
   InterfaceList(std::initializer_list<Interface*> ifs) : ifs(ifs) { }
 
   void setup() { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->setup(); }
-  void loop() { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->loop(); }
+  Event loop() {
+    for (auto i = ifs.begin(); i != ifs.end(); ++i) {
+      auto r = (*i)->loop();
+      if (r != Event::idle) return r;
+    }
+    return Event::idle;
+  }
 
   void startMsg(const char* msg)  { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->startMsg(msg); }
   void statusMsg(const char* msg) { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->statusMsg(msg); }
@@ -319,10 +427,87 @@ void FilesToFlash::report() {
 
 
 
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
+
+class FlashManager {
+
+public:
+  void setup();
+  bool start();
+
+private:
+#define BUFSIZE 256       //don't change!
+  uint8_t buf[BUFSIZE];
+
+  //create a DAP for programming Atmel SAM devices
+  Adafruit_DAP_SAM dap;
+
+  bool dap_error();
+  static void error(const char* text);
+};
+
+void FlashManager::setup() {
+  dap.begin(TARGET_SWCLK, TARGET_SWDIO, TARGET_SWRST, &error);
+}
+
+bool FlashManager::start() {
+  bool doAgain = false;
+  do {
+    if (! dap.dap_disconnect())                     return dap_error();
+    if (! dap.dap_connect())                        return dap_error();
+    if (! dap.dap_transfer_configure(0, 128, 128))  return dap_error();
+    if (! dap.dap_swd_configure(0))                 return dap_error();
+    if (! dap.dap_reset_link())                     return dap_error();
+    if (! dap.dap_swj_clock(50))                    return dap_error();
+    if (! dap.dap_reset_target_hw())                return dap_error();
+    if (! dap.dap_reset_link())                     return dap_error();
+    if (! dap.dap_target_prepare())                 return dap_error();
+
+    uint32_t dsu_did;
+    if (! dap.select(&dsu_did)) {
+      interfaces.errorMsgf("Unknown device 0x%x", dsu_did);
+      return false;
+    }
+
+    for (device_t *device = dap.devices; device->dsu_did > 0; device++) {
+      if (device->dsu_did == dsu_did) {
+        interfaces.statusMsgf(
+          "->%s, %dk", device->name, sizeInK(device->flash_size));
+      }
+    }
+
+    dap.fuseRead(); // fuse operations don't return a result (!)
+    if (dap._USER_ROW.BOOTPROT != 7 || dap._USER_ROW.LOCK != 0xffff) {
+      if (doAgain) {
+        interfaces.errorMsgf("unprotection failed");
+        return false;
+      }
+
+      dap._USER_ROW.BOOTPROT = 7;   // unprotect the boot area
+      dap._USER_ROW.LOCK = 0xffff;  // unprotect all the regions
+      dap.fuseWrite();
+      doAgain = true;
+      interfaces.statusMsgf("NVRAM now unprotected, resetting");
+    } else {
+      doAgain = false;
+    }
+  } while (doAgain);
+
+  return true;
+}
+
+bool FlashManager::dap_error() {
+  interfaces.errorMsg(dap.error_message);
+  return false;
+}
+
+void FlashManager::error(const char* text) {
+  // should handle the absurd ")" case
+  interfaces.errorMsgf("DAP error: %s", text);
+}
 
 
-
-
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
 
 
 // file system object from SdFat
@@ -342,7 +527,7 @@ void setup() {
 
   // Initialize flash library and check its chip ID.
   if (!flash.begin()) {
-    interfaces.errorMsg("Error, failed to initialize flash chip!");
+    interfaces.errorMsg("Failed to initialize flash chip!");
     while(1);
   }
 
@@ -370,8 +555,6 @@ void setup() {
 }
 
 void loop() {
-  interfaces.loop();
-
   if (!mounted) {
     // First call begin to mount the filesystem.  Check that it returns true
     // to make sure the filesystem was mounted.
@@ -391,6 +574,28 @@ void loop() {
     ftf.report();
 
     delay(1000);
+  }
+
+  switch (interfaces.loop()) {
+    case Event::idle:
+      break;
+
+    case Event::startFlash: {
+      interfaces.statusMsg("Starting flash...");
+      delay(1000);
+
+      FilesToFlash ftf;
+      ftf.report();
+
+      FlashManager fm;
+      fm.setup();
+      fm.start();
+
+      break;
+    }
+
+    default:
+      interfaces.errorMsg("Event huh?");
   }
 }
 

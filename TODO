@@ -44,4 +44,19 @@
 		[] red LED
 		[] speaker
 
+[] Adafruilt_DAP
+    [] use of perror_exit is flawed
+        - sometimes used when first part of message is after Serial.print() calls
+        - expects to exit app (or rather hang app) - so no good for app to continue
+    [] enable programming w/o full chip erase
+        - would need program block to use the erase row command (as sort of coded in comments)
+    [] lock fuses
+        - use temporary unlock commands?
+        - set them based on size of things burned? just boot?
+        - is boot always 8k?
+            8k for M0
+            16k for M4
+    [] GCC 4.4 warning:
+        Adafruit_DAP_library/Adafruit_DAP.h:295:40:
+        note: offset of packed bit-field 'Adafruit_DAP_SAMx5::<unnamed union>::<unnamed struct>::BOD33_Level' has changed in GCC 4.4
 
