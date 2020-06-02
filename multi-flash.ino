@@ -85,6 +85,11 @@ public:
   virtual void startMsg(const char* msg) { }
   virtual void statusMsg(const char* msg) { }
   virtual void errorMsg(const char* msg) { }
+
+  virtual void binaries(
+    size_t bootSize, const char* bootName,
+    size_t appSize, const char* appName)
+    { }
 };
 
 
@@ -115,6 +120,20 @@ public:
   void errorMsg(const char* msg) {
     Serial.print("** ");
     Serial.println(msg);
+  }
+
+  void binaries(
+    size_t bootSize, const char* bootName,
+    size_t appSize, const char* appName)
+  {
+    bootSize = (bootSize + 1023) / 1024;
+    appSize = (appSize + 1023) / 1024;
+
+    if (bootSize > 0) Serial.printf("> boot: %3dk %s\n", bootSize, bootName);
+    else              Serial.printf("> boot: ---  no binary\n");
+
+    if (appSize > 0)  Serial.printf("> app:  %3dk %s\n", appSize, appName);
+    else              Serial.printf("> app:  ---  no binary\n");
   }
 };
 
@@ -148,15 +167,33 @@ public:
   void statusMsg(const char* msg) { textLine(4, false, msg); }
   void errorMsg(const char* msg)  { textLine(4, true,  msg); }
 
+  void binaries(
+    size_t bootSize, const char* bootName,
+    size_t appSize, const char* appName)
+  {
+    binaryLine(2, "boot", bootSize, bootName);
+    binaryLine(3, "app", appSize, appName);
+  }
+
 private:
   Adafruit_SSD1306 display = Adafruit_SSD1306(128, 32, &Wire);
+
+  void binaryLine(int line, const char* type, size_t size, const char* name) {
+    char s[64];
+
+    size = (size + 1023) / 1024;
+    if (size > 0) snprintf(s, sizeof(s), "%3dk %s\n", size, name);
+    else          snprintf(s, sizeof(s), "---  no %s binary\n", type);
+
+    textLine(line, false, s);
+  }
 
   void textLine(int line, bool invert, const char* msg) {
     int16_t y = 8 * (line - 1);
 
     display.fillRect(0, y, 128, 8, invert ? WHITE : BLACK);
     display.setTextColor(invert ? BLACK : WHITE);
-    display.setCursor(0, y);
+    display.setCursor(invert ? 1 : 0, y);
     display.print(msg);
     display.display();
   }
@@ -177,7 +214,10 @@ public:
 
   void startMsg(const char* msg)  { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->startMsg(msg); }
   void statusMsg(const char* msg) { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->statusMsg(msg); }
-  void errorMsg(const char* msg)  { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->errorMsg(msg);}
+  void errorMsg(const char* msg)  { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->errorMsg(msg); }
+
+  void binaries(size_t bs, const char* bn, size_t as, const char* an)
+    { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->binaries(bs, bn, as, an); }
 
 private:
   std::forward_list<Interface*> ifs;
@@ -202,6 +242,8 @@ struct FilesToFlash {
 
   FatFile bootFile;
   FatFile appFile;
+
+  void report();
 
 private:
   static bool matchBinFileName(const char* prefix, FatFile& file);
@@ -255,7 +297,25 @@ bool FilesToFlash::matchBinFileName(const char* prefix, FatFile& file) {
     && nameStr.endsWith(".bin");
 }
 
+void FilesToFlash::report() {
+  size_t bootSize = 0;
+  size_t appSize = 0;
 
+  char bootName[512];
+  char appName[512];
+
+  if (bootFile.isOpen()) {
+      bootSize = bootFile.fileSize();
+      bootFile.getName(bootName, sizeof(bootName));
+  }
+
+  if (appFile.isOpen()) {
+      appSize = appFile.fileSize();
+      appFile.getName(appName, sizeof(appName));
+  }
+
+  interfaces.binaries(bootSize, bootName, appSize, appName);
+}
 
 
 
@@ -320,7 +380,6 @@ void loop() {
       delay(2000);
       return;
     }
-    interfaces.statusMsg("Mounted filesystem!");
     mounted = true;
     changed = true;
   }
@@ -329,6 +388,7 @@ void loop() {
     changed = false;
 
     FilesToFlash ftf;
+    ftf.report();
 
     delay(1000);
   }

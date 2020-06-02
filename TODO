@@ -11,6 +11,9 @@
 		        make_empty_file(&vfs_fat->fatfs, "/.Trashes");
 		        make_empty_file(&vfs_fat->fatfs, "/.fseventsd/no_log");
         [] volume name
+    [] format flash if button down on boot
+
+
 [x] text output
     [x] via Serial
     [x] via OLED
@@ -23,6 +26,7 @@
 	[x] one or both, depending on what is there
 
 [] only seek files after a few seconds of flash updates stop
+    [] and force a flush
 
 [] Flash Start
 	[] button pressed
