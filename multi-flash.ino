@@ -77,14 +77,14 @@ Adafruit_SPIFlash flash(&flashTransport);
 
 /* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
 
-class Interface : public Print {
+class Interface {
 public:
   virtual void setup() { }
   virtual void loop() { }
 
-  virtual size_t write(uint8_t) { };
-  using Print::write;
-
+  virtual void startMsg(const char* msg) { }
+  virtual void statusMsg(const char* msg) { }
+  virtual void errorMsg(const char* msg) { }
 };
 
 
@@ -99,7 +99,23 @@ public:
 #endif
   }
 
-  size_t write(uint8_t c) { return Serial.write(c); }
+  void startMsg(const char* msg) {
+    Serial.println();
+    Serial.println();
+    Serial.println(msg);
+    for (auto i = strlen(msg); i; --i)
+      Serial.print('-');
+    Serial.println();
+  }
+
+  void statusMsg(const char* msg) {
+    Serial.println(msg);
+  }
+
+  void errorMsg(const char* msg) {
+    Serial.print("** ");
+    Serial.println(msg);
+  }
 };
 
 SerialInterface serialInterface;
@@ -126,27 +142,24 @@ public:
 
     display.println("Multi-Flash");
     display.display();
-    newLine = true;
   }
 
-  size_t write(uint8_t c) {
-    if (newLine) {
-      display.fillRect(0, 24, 128, 8, BLACK);
-      display.setCursor(0, 24);
-      newLine = false;
-    }
-    if (c == '\n') {
-      display.display();
-      newLine = true;
-      return 1;
-    } else {
-      return display.write(c);
-    }
-  }
+  void startMsg(const char* msg)  { textLine(1, false, msg); }
+  void statusMsg(const char* msg) { textLine(4, false, msg); }
+  void errorMsg(const char* msg)  { textLine(4, true,  msg); }
 
 private:
   Adafruit_SSD1306 display = Adafruit_SSD1306(128, 32, &Wire);
-  bool newLine = false;
+
+  void textLine(int line, bool invert, const char* msg) {
+    int16_t y = 8 * (line - 1);
+
+    display.fillRect(0, y, 128, 8, invert ? WHITE : BLACK);
+    display.setTextColor(invert ? BLACK : WHITE);
+    display.setCursor(0, y);
+    display.print(msg);
+    display.display();
+  }
 };
 
 OledFeatherwing oledFetherwing;
@@ -162,8 +175,9 @@ public:
   void setup() { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->setup(); }
   void loop() { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->loop(); }
 
-  size_t write(uint8_t c) { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->write(c); };
-  using Print::write;
+  void startMsg(const char* msg)  { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->startMsg(msg); }
+  void statusMsg(const char* msg) { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->statusMsg(msg); }
+  void errorMsg(const char* msg)  { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->errorMsg(msg);}
 
 private:
   std::forward_list<Interface*> ifs;
@@ -189,8 +203,6 @@ struct FilesToFlash {
   FatFile bootFile;
   FatFile appFile;
 
-  void dump();
-
 private:
   static bool matchBinFileName(const char* prefix, FatFile& file);
   static void dumpBinFile(const char* type, FatFile& file);
@@ -199,7 +211,7 @@ private:
 FilesToFlash::FilesToFlash() {
   FatFile root;
   if (!root.open("/")) {
-    interfaces.println("open root failed");
+    interfaces.errorMsg("open root failed");
   }
 
   FatFile file;
@@ -208,20 +220,20 @@ FilesToFlash::FilesToFlash() {
       if (!bootFile.isOpen()) {
         bootFile = file;
       } else {
-        interfaces.println("multiple boot .bin files found");
+        interfaces.errorMsg("multiple boot .bin files found");
       }
     } else if (matchBinFileName("app", file)) {
       if (!appFile.isOpen()) {
         appFile = file;
       } else {
-        interfaces.println("multiple app .bin files found");
+        interfaces.errorMsg("multiple app .bin files found");
       }
     }
     file.close();
   }
 
   if (root.getError()) {
-    interfaces.println("root openNext failed");
+    interfaces.errorMsg("root openNext failed");
   }
   root.close();
 }
@@ -229,11 +241,6 @@ FilesToFlash::FilesToFlash() {
 FilesToFlash::~FilesToFlash() {
   bootFile.close();
   appFile.close();
-}
-
-void FilesToFlash::dump() {
-  dumpBinFile("boot", bootFile);
-  dumpBinFile("app", appFile);
 }
 
 bool FilesToFlash::matchBinFileName(const char* prefix, FatFile& file) {
@@ -248,18 +255,6 @@ bool FilesToFlash::matchBinFileName(const char* prefix, FatFile& file) {
     && nameStr.endsWith(".bin");
 }
 
-void FilesToFlash::dumpBinFile(const char* type, FatFile& file) {
-  if (file.isOpen()) {
-    file.printFileSize(&interfaces);
-    interfaces.write(' ');
-    file.printName(&interfaces);
-    interfaces.println();
-  } else {
-    interfaces.print("        -- no "); // printFileSize outputs 10 characters
-    interfaces.print(type);
-    interfaces.println(" binary");
-  }
-}
 
 
 
@@ -287,7 +282,7 @@ void setup() {
 
   // Initialize flash library and check its chip ID.
   if (!flash.begin()) {
-    interfaces.println("Error, failed to initialize flash chip!");
+    interfaces.errorMsg("Error, failed to initialize flash chip!");
     while(1);
   }
 
@@ -307,7 +302,7 @@ void setup() {
 
 
   interfaces.setup();
-  interfaces.println("Multi-Flash");
+  interfaces.startMsg("Multi-Flash");
 
   mounted = false;
   changed = false;
@@ -321,12 +316,11 @@ void loop() {
     // First call begin to mount the filesystem.  Check that it returns true
     // to make sure the filesystem was mounted.
     if (!fatfs.begin(&flash)) {
-      interfaces.println("Failed to mount filesystem!");
-      interfaces.println("Will wait a bit for host to init it!");
+      interfaces.errorMsg("Failed to mount filesystem!");
       delay(2000);
       return;
     }
-    interfaces.println("Mounted filesystem!");
+    interfaces.statusMsg("Mounted filesystem!");
     mounted = true;
     changed = true;
   }
@@ -335,7 +329,6 @@ void loop() {
     changed = false;
 
     FilesToFlash ftf;
-    ftf.dump();
 
     delay(1000);
   }

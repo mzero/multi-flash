@@ -11,12 +11,18 @@
 		        make_empty_file(&vfs_fat->fatfs, "/.Trashes");
 		        make_empty_file(&vfs_fat->fatfs, "/.fseventsd/no_log");
         [] volume name
+[x] text output
+    [x] via Serial
+    [x] via OLED
+
 
 
 [x] What to Flash
 	[x] look for files of the form boot.*\.bin (case insensitive) for boot
 	[x] look for files of the form app.*\.bin (case insensitive) for applciation
 	[x] one or both, depending on what is there
+
+[] only seek files after a few seconds of flash updates stop
 
 [] Flash Start
 	[] button pressed
@@ -33,9 +39,5 @@
 		[] 10 RGB leds
 		[] red LED
 		[] speaker
-
-[] text output
-	[] via Serial
-	[] via OLED
 
 
