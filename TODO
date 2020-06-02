@@ -6,6 +6,12 @@
 	[x] writes to flash
 	[] formats flash as FAT (compatible with CircuitPython we hope)
 		[] writes all the needed stuff to keep mac happy
+		        f_mkdir(&vfs_fat->fatfs, "/.fseventsd");
+		        make_empty_file(&vfs_fat->fatfs, "/.metadata_never_index");
+		        make_empty_file(&vfs_fat->fatfs, "/.Trashes");
+		        make_empty_file(&vfs_fat->fatfs, "/.fseventsd/no_log");
+        [] volume name
+
 
 [x] What to Flash
 	[x] look for files of the form boot.*\.bin (case insensitive) for boot

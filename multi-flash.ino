@@ -32,12 +32,31 @@ devices. It works like this:
 
 */
 
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
 
+// FEATURE MACROS
+
+#define MF_WAIT_FOR_SERIAL
+#define MF_OLED_FEATHERWING
+
+
+
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
+
+#include <forward_list>
+#include <initializer_list>
 
 #include <SPI.h>
 #include <SdFat.h>
 #include <Adafruit_SPIFlash.h>
 #include <Adafruit_TinyUSB.h>
+
+#ifdef MF_OLED_FEATHERWING
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Wire.h>
+#endif
+
 
 // On-board external flash (QSPI or SPI) macros should already
 // defined in your board variant if supported
@@ -56,8 +75,112 @@ devices. It works like this:
 Adafruit_SPIFlash flash(&flashTransport);
 
 
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
+
+class Interface : public Print {
+public:
+  virtual void setup() { }
+  virtual void loop() { }
+
+  virtual size_t write(uint8_t) { };
+  using Print::write;
+
+};
 
 
+class SerialInterface : public Interface {
+public:
+  void setup() {
+    Serial.begin(115200);
+#ifdef MF_WAIT_FOR_SERIAL
+    while (!Serial) {
+      delay(100);
+    }
+#endif
+  }
+
+  size_t write(uint8_t c) { return Serial.write(c); }
+};
+
+SerialInterface serialInterface;
+
+
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
+
+// FEATURE HARDWARE
+
+#ifdef MF_OLED_FEATHERWING
+
+class OledFeatherwing : public Interface {
+public:
+  void setup() {
+    // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Address 0x3C for 128x32
+    display.cp437();
+    display.clearDisplay();
+
+    display.setTextSize(1);
+    display.setFont();
+    display.setTextColor(WHITE);
+    display.setTextWrap(false);
+
+    display.println("Multi-Flash");
+    display.display();
+    newLine = true;
+  }
+
+  size_t write(uint8_t c) {
+    if (newLine) {
+      display.fillRect(0, 24, 128, 8, BLACK);
+      display.setCursor(0, 24);
+      newLine = false;
+    }
+    if (c == '\n') {
+      display.display();
+      newLine = true;
+      return 1;
+    } else {
+      return display.write(c);
+    }
+  }
+
+private:
+  Adafruit_SSD1306 display = Adafruit_SSD1306(128, 32, &Wire);
+  bool newLine = false;
+};
+
+OledFeatherwing oledFetherwing;
+
+#endif // MF_OLED_FEATHERWING
+
+
+
+class InterfaceList : public Interface {
+public:
+  InterfaceList(std::initializer_list<Interface*> ifs) : ifs(ifs) { }
+
+  void setup() { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->setup(); }
+  void loop() { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->loop(); }
+
+  size_t write(uint8_t c) { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->write(c); };
+  using Print::write;
+
+private:
+  std::forward_list<Interface*> ifs;
+};
+
+InterfaceList interfaces({
+  &serialInterface,
+#ifdef MF_OLED_FEATHERWING
+  &oledFetherwing,
+#endif
+});
+
+
+
+
+
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
 
 struct FilesToFlash {
   FilesToFlash();
@@ -76,7 +199,7 @@ private:
 FilesToFlash::FilesToFlash() {
   FatFile root;
   if (!root.open("/")) {
-    Serial.println("open root failed");
+    interfaces.println("open root failed");
   }
 
   FatFile file;
@@ -85,20 +208,20 @@ FilesToFlash::FilesToFlash() {
       if (!bootFile.isOpen()) {
         bootFile = file;
       } else {
-        Serial.println("multiple boot .bin files found");
+        interfaces.println("multiple boot .bin files found");
       }
     } else if (matchBinFileName("app", file)) {
       if (!appFile.isOpen()) {
         appFile = file;
       } else {
-        Serial.println("multiple app .bin files found");
+        interfaces.println("multiple app .bin files found");
       }
     }
     file.close();
   }
 
   if (root.getError()) {
-    Serial.println("root openNext failed");
+    interfaces.println("root openNext failed");
   }
   root.close();
 }
@@ -127,14 +250,14 @@ bool FilesToFlash::matchBinFileName(const char* prefix, FatFile& file) {
 
 void FilesToFlash::dumpBinFile(const char* type, FatFile& file) {
   if (file.isOpen()) {
-    file.printFileSize(&Serial);
-    Serial.write(' ');
-    file.printName(&Serial);
-    Serial.println();
+    file.printFileSize(&interfaces);
+    interfaces.write(' ');
+    file.printName(&interfaces);
+    interfaces.println();
   } else {
-    Serial.print("        -- no "); // printFileSize outputs 10 characters
-    Serial.print(type);
-    Serial.println(" binary");
+    interfaces.print("        -- no "); // printFileSize outputs 10 characters
+    interfaces.print(type);
+    interfaces.println(" binary");
   }
 }
 
@@ -164,12 +287,12 @@ void setup() {
 
   // Initialize flash library and check its chip ID.
   if (!flash.begin()) {
-    Serial.println("Error, failed to initialize flash chip!");
+    interfaces.println("Error, failed to initialize flash chip!");
     while(1);
   }
 
   // Set disk vendor id, product id and revision with string up to 8, 16, 4 characters respectively
-  usb_msc.setID("Adafruit", "SAM-I-FLASH", "1.0");
+  usb_msc.setID("e.k", "Multi-Flash", "1.0");
 
   // Set callback
   usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
@@ -183,15 +306,8 @@ void setup() {
   usb_msc.begin();
 
 
-  // Initialize serial port and wait for it to open before continuing.
-  Serial.begin(115200);
-  while (!Serial) {
-    delay(100);
-  }
-  Serial.println("SAM I FLASH Example");
-  Serial.print("Flash chip JEDEC ID: 0x"); Serial.println(flash.getJEDECID(), HEX);
-  Serial.print("Flash size: "); Serial.println(flash.size());
-
+  interfaces.setup();
+  interfaces.println("Multi-Flash");
 
   mounted = false;
   changed = false;
@@ -199,23 +315,24 @@ void setup() {
 }
 
 void loop() {
+  interfaces.loop();
+
   if (!mounted) {
     // First call begin to mount the filesystem.  Check that it returns true
     // to make sure the filesystem was mounted.
     if (!fatfs.begin(&flash)) {
-      Serial.println("Failed to mount filesystem!");
-      Serial.println("Will wait a bit for host to init it!");
+      interfaces.println("Failed to mount filesystem!");
+      interfaces.println("Will wait a bit for host to init it!");
       delay(2000);
       return;
     }
-    Serial.println("Mounted filesystem!");
+    interfaces.println("Mounted filesystem!");
     mounted = true;
     changed = true;
   }
 
   if (changed) {
     changed = false;
-    dumpFS();
 
     FilesToFlash ftf;
     ftf.dump();
