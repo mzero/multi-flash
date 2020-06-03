@@ -311,21 +311,21 @@ class InterfaceList : public Interface {
 public:
   InterfaceList(std::initializer_list<Interface*> ifs) : ifs(ifs) { }
 
-  void setup() { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->setup(); }
+  void setup() { for (auto&& i : ifs) i->setup(); }
   Event loop() {
-    for (auto i = ifs.begin(); i != ifs.end(); ++i) {
-      auto r = (*i)->loop();
+    for (auto&& i : ifs) {
+      auto r = i->loop();
       if (r != Event::idle) return r;
     }
     return Event::idle;
   }
 
-  void startMsg(const char* msg)  { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->startMsg(msg); }
-  void statusMsg(const char* msg) { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->statusMsg(msg); }
-  void errorMsg(const char* msg)  { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->errorMsg(msg); }
+  void startMsg(const char* msg)  { for (auto&& i : ifs) i->startMsg(msg); }
+  void statusMsg(const char* msg) { for (auto&& i : ifs) i->statusMsg(msg); }
+  void errorMsg(const char* msg)  { for (auto&& i : ifs) i->errorMsg(msg); }
 
   void binaries(size_t bs, const char* bn, size_t as, const char* an)
-    { for (auto i = ifs.begin(); i != ifs.end(); ++i) (*i)->binaries(bs, bn, as, an); }
+    { for (auto&& i : ifs) i->binaries(bs, bn, as, an); }
 
 private:
   std::forward_list<Interface*> ifs;
