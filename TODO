@@ -5,7 +5,7 @@
 
 [x] only seek files after a few seconds of flash updates stop
     [-] and force a flush  -- already done in the msc callback
-    [] clear error/status on rescan
+    [x] clear error/status on rescan
     [] error if no boot
         - since that is currently required
 

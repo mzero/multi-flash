@@ -107,6 +107,7 @@ public:
   virtual void startMsg(const char* msg) { }
   virtual void statusMsg(const char* msg) { }
   virtual void errorMsg(const char* msg) { }
+  virtual void clearMsg() { }
 
   void startMsgf(const char* fmt, ... ) {
     char buf[128];
@@ -134,7 +135,6 @@ public:
     va_end(args);
     errorMsg(buf);
   }
-
 
   virtual void binaries(
     size_t bootSize, const char* bootName,
@@ -266,6 +266,7 @@ public:
   void startMsg(const char* msg)  { textLine(1, false, msg); }
   void statusMsg(const char* msg) { textLine(4, false, msg); }
   void errorMsg(const char* msg)  { textLine(4, true,  msg); }
+  void clearMsg()                 { textLine(4, false, "");  }
 
   void binaries(
     size_t bootSize, const char* bootName,
@@ -323,6 +324,7 @@ public:
   void startMsg(const char* msg)  { for (auto&& i : ifs) i->startMsg(msg); }
   void statusMsg(const char* msg) { for (auto&& i : ifs) i->statusMsg(msg); }
   void errorMsg(const char* msg)  { for (auto&& i : ifs) i->errorMsg(msg); }
+  void clearMsg()                 { for (auto&& i : ifs) i->clearMsg(); }
 
   void binaries(size_t bs, const char* bn, size_t as, const char* an)
     { for (auto&& i : ifs) i->binaries(bs, bn, as, an); }
@@ -362,6 +364,8 @@ private:
 };
 
 FilesToFlash::FilesToFlash() {
+  interfaces.clearMsg();
+
   FatFile root;
   if (!root.open("/")) {
     interfaces.errorMsg("open root failed");
