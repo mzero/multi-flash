@@ -732,14 +732,16 @@ void loop() {
 
     case Event::startFlash: {
 
-      if (fileSystemChanging())
+      if (fileSystemChanging()) {
+        interfaces.statusMsg("storage write in progress...");
         break; // don't flash if FS is still being written!
-
-      interfaces.statusMsg("Starting flash...");
-      delay(1000);
+      }
 
       FilesToFlash ftf;
       ftf.report();
+
+      interfaces.statusMsg("Starting flash...");
+      delay(1000);
 
       FlashManager fm;
       fm.setup();
