@@ -353,6 +353,9 @@ struct FilesToFlash {
 
   void report();
 
+  void rewind();
+  int readNextBlock(uint8_t* buf, size_t blockSize);
+
 private:
   static bool matchBinFileName(const char* prefix, FatFile& file);
   static void dumpBinFile(const char* type, FatFile& file);
@@ -405,6 +408,32 @@ bool FilesToFlash::matchBinFileName(const char* prefix, FatFile& file) {
     && nameStr.endsWith(".bin");
 }
 
+void FilesToFlash::rewind() {
+  if (bootFile.isOpen())  bootFile.rewind();
+  if (appFile.isOpen()) appFile.rewind();
+}
+
+int FilesToFlash::readNextBlock(uint8_t* buf, size_t bufsize) {
+  if (bootFile.isOpen()) {
+    auto r = bootFile.read(buf, bufsize);
+    if (r < 0) return r;
+    if (r == bufsize) return r;
+
+    if (appFile.isOpen()) {
+      buf += r;
+      bufsize -= r;
+
+      auto s = appFile.read(buf, bufsize);
+      if (s < 0) return s;
+
+      r += s;
+    }
+
+    return r;
+  }
+  return 0;
+}
+
 void FilesToFlash::report() {
   size_t bootSize = 0;
   size_t appSize = 0;
@@ -434,11 +463,10 @@ class FlashManager {
 public:
   void setup();
   bool start();
+  bool program(FilesToFlash& ftf);
+  void end();
 
 private:
-#define BUFSIZE 256       //don't change!
-  uint8_t buf[BUFSIZE];
-
   //create a DAP for programming Atmel SAM devices
   Adafruit_DAP_SAM dap;
 
@@ -468,13 +496,8 @@ bool FlashManager::start() {
       interfaces.errorMsgf("Unknown device 0x%x", dsu_did);
       return false;
     }
-
-    for (device_t *device = dap.devices; device->dsu_did > 0; device++) {
-      if (device->dsu_did == dsu_did) {
-        interfaces.statusMsgf(
-          "->%s, %dk", device->name, sizeInK(device->flash_size));
-      }
-    }
+    interfaces.statusMsgf(
+      "->%s, %dk", dap.target_device.name, sizeInK(dap.target_device.flash_size));
 
     dap.fuseRead(); // fuse operations don't return a result (!)
     if (dap._USER_ROW.BOOTPROT != 7 || dap._USER_ROW.LOCK != 0xffff) {
@@ -495,6 +518,74 @@ bool FlashManager::start() {
 
   return true;
 }
+
+bool FlashManager::program(FilesToFlash& ftf) {
+#define BUFSIZE 256       //don't change!
+  uint8_t bufFile[BUFSIZE];
+  uint8_t bufFlash[BUFSIZE];
+
+  dap.erase();
+
+  auto startAddr = dap.program_start();
+
+  auto addr = startAddr;
+  ftf.rewind();
+  do {
+    auto r = ftf.readNextBlock(bufFile, sizeof(bufFile));
+    if (r < 0) {
+      interfaces.errorMsg("error reading binaries");
+      return false;
+    }
+    if (r == 0)
+      break;
+    dap.programBlock(addr, bufFile);
+
+    addr += sizeof(bufFile);  // must be in BUFSIZE chunks due to auto write
+    Serial.print('.');
+  } while (true);
+  Serial.println();
+
+  addr = startAddr;
+  ftf.rewind();
+  do {
+    auto r = ftf.readNextBlock(bufFile, sizeof(bufFile));
+    if (r < 0) {
+      interfaces.errorMsg("error reading binaries");
+      return false;
+    }
+    if (r == 0)
+      break;
+    dap.readBlock(addr, bufFlash);
+
+    if (memcmp(bufFile, bufFlash, r) != 0) {
+      interfaces.errorMsgf("mismatch @%08x", addr);
+
+      auto f = &bufFile[0];
+      auto g = &bufFlash[0];
+      for (int i = 0; i < 8; ++i) {
+        Serial.printf("f: %02x %02x %02x %02x   %02x %02x %02x %02x\n", *f++, *f++, *f++, *f++,   *f++, *f++, *f++, *f++);
+        Serial.printf("g: %02x %02x %02x %02x   %02x %02x %02x %02x\n", *g++, *g++, *g++, *g++,   *g++, *g++, *g++, *g++);
+        Serial.println();
+      }
+
+      return false;
+    }
+
+    addr += sizeof(bufFile);  // must be in BUFSIZE chunks due to auto write
+    Serial.print('+');
+  } while (true);
+  Serial.println();
+
+  return true;
+}
+
+
+void FlashManager::end() {
+  dap.dap_set_clock(50);
+  dap.deselect();
+  dap.dap_disconnect();   // errors in this case are irrelevant
+}
+
 
 bool FlashManager::dap_error() {
   interfaces.errorMsg(dap.error_message);
@@ -589,7 +680,11 @@ void loop() {
 
       FlashManager fm;
       fm.setup();
-      fm.start();
+      if (fm.start())
+        if (fm.program(ftf))
+          interfaces.statusMsg("done");
+
+      fm.end();
 
       break;
     }
