@@ -99,6 +99,12 @@ enum struct Event {
   startFlash
 };
 
+enum struct Burn {
+  programming,
+  verifying,
+  complete,
+};
+
 class Interface {
 public:
   virtual void setup() { }
@@ -140,6 +146,8 @@ public:
     size_t bootSize, const char* bootName,
     size_t appSize, const char* appName)
     { }
+
+  virtual void progress(Burn phase, size_t done, size_t size) { }
 };
 
 
@@ -181,6 +189,32 @@ public:
 
     if (appSize > 0)  Serial.printf("> app:  %3dk %s\n", sizeInK(appSize), appName);
     else              Serial.printf("> app:  ---  no binary\n");
+  }
+
+private:
+  Burn progressPhase = Burn::complete;
+  int  progressPct = 0;
+
+public:
+  void progress(Burn phase, size_t done, size_t size) {
+    if (phase != progressPhase) {
+      progressPhase = phase;
+      progressPct = 0;
+
+      switch (phase) {
+        case Burn::programming:   Serial.print("programming: ");  break;
+        case Burn::verifying:     Serial.print("\nverifying:  "); break;
+        case Burn::complete:      Serial.print("\ndone\n");       return;
+      }
+    }
+
+    int pct = static_cast<int>((done * 10) / size) * 10;
+
+    if (pct != progressPct) {
+      progressPct = pct;
+
+      Serial.printf("..%2d%%", pct);
+    }
   }
 };
 
@@ -276,6 +310,25 @@ public:
     binaryLine(3, "app", appSize, appName);
   }
 
+  void progress(Burn phase, size_t done, size_t size) {
+    const char* leadin;
+
+    switch (phase) {
+      case Burn::programming:   leadin = "burn";  break;
+      case Burn::verifying:     leadin = "vrfy";  break;
+      case Burn::complete:      leadin = "done";  done = 0;  break;
+    }
+
+    uint16_t x = static_cast<uint16_t>((done * 100 + 50) / size);
+
+    display.fillRect( 0, 24, 128, 8, BLACK);
+    display.fillRect(28, 24,   x, 8, WHITE);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 24);
+    display.print(leadin);
+    display.display();
+ }
+
 private:
   Adafruit_SSD1306 display = Adafruit_SSD1306(128, 32, &Wire);
 
@@ -329,6 +382,9 @@ public:
   void binaries(size_t bs, const char* bn, size_t as, const char* an)
     { for (auto&& i : ifs) i->binaries(bs, bn, as, an); }
 
+  void progress(Burn phase, size_t done, size_t size)
+    { for (auto&& i : ifs) i->progress(phase, done, size); }
+
 private:
   std::forward_list<Interface*> ifs;
 };
@@ -355,6 +411,7 @@ struct FilesToFlash {
 
   void report();
 
+  size_t imageSize();
   void rewind();
   int readNextBlock(uint8_t* buf, size_t blockSize);
 
@@ -410,6 +467,12 @@ bool FilesToFlash::matchBinFileName(const char* prefix, FatFile& file) {
   return
     nameStr.startsWith(prefix)
     && nameStr.endsWith(".bin");
+}
+
+size_t FilesToFlash::imageSize() {
+  return
+    (bootFile.isOpen() ? bootFile.fileSize() : 0)
+    + (appFile.isOpen() ? appFile.fileSize() : 0);
 }
 
 void FilesToFlash::rewind() {
@@ -530,6 +593,7 @@ bool FlashManager::program(FilesToFlash& ftf) {
 
   dap.erase();
 
+  auto imageSize = ftf.imageSize();
   auto startAddr = dap.program_start();
 
   auto addr = startAddr;
@@ -545,9 +609,9 @@ bool FlashManager::program(FilesToFlash& ftf) {
     dap.programBlock(addr, bufFile);
 
     addr += sizeof(bufFile);  // must be in BUFSIZE chunks due to auto write
-    Serial.print('.');
+    interfaces.progress(Burn::programming, addr, imageSize);
+    yield();
   } while (true);
-  Serial.println();
 
   addr = startAddr;
   ftf.rewind();
@@ -563,22 +627,15 @@ bool FlashManager::program(FilesToFlash& ftf) {
 
     if (memcmp(bufFile, bufFlash, r) != 0) {
       interfaces.errorMsgf("mismatch @%08x", addr);
-
-      auto f = &bufFile[0];
-      auto g = &bufFlash[0];
-      for (int i = 0; i < 8; ++i) {
-        Serial.printf("f: %02x %02x %02x %02x   %02x %02x %02x %02x\n", *f++, *f++, *f++, *f++,   *f++, *f++, *f++, *f++);
-        Serial.printf("g: %02x %02x %02x %02x   %02x %02x %02x %02x\n", *g++, *g++, *g++, *g++,   *g++, *g++, *g++, *g++);
-        Serial.println();
-      }
-
       return false;
     }
 
     addr += sizeof(bufFile);  // must be in BUFSIZE chunks due to auto write
-    Serial.print('+');
+    interfaces.progress(Burn::verifying, addr, imageSize);
+    yield();
   } while (true);
-  Serial.println();
+
+  interfaces.progress(Burn::complete, imageSize, imageSize);
 
   return true;
 }
@@ -746,9 +803,7 @@ void loop() {
       FlashManager fm;
       fm.setup();
       if (fm.start())
-        if (fm.program(ftf))
-          interfaces.statusMsg("done");
-
+        fm.program(ftf);
       fm.end();
 
       break;

@@ -9,16 +9,13 @@
     [] error if no boot
         - since that is currently required
 
-[] Eject button
-    - is this even possible? perhaps just sync button
-
-[] progress bar
-    [] write & verified
+[x] progress bar
+    [x] write & verified
     - okay to have one bar for both
 
 [] reset line is funky?
-
 [] reset target after flashing?
+[] move FlashManager start/end to be ctor/dtor
 
 == B ===
 
@@ -69,3 +66,7 @@
 
 [] handle boot binaries that are the "wrong" size for the platform
     - how to know what the right size is?
+
+[?] Eject button
+    - doesn't seem possible in the API given
+
