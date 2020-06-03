@@ -608,93 +608,25 @@ FatFileSystem fatfs;
 Adafruit_USBD_MSC usb_msc;
 
 // Set to true when PC write to flash
-bool mounted;
-bool changed;
+bool mounted = false;
 
+uint32_t changeSettledAt = 0;
 
-void setup() {
-
-  pinMode(LED_BUILTIN, OUTPUT);
-
-  // Initialize flash library and check its chip ID.
-  if (!flash.begin()) {
-    interfaces.errorMsg("Failed to initialize flash chip!");
-    while(1);
-  }
-
-  // Set disk vendor id, product id and revision with string up to 8, 16, 4 characters respectively
-  usb_msc.setID("e.k", "Multi-Flash", "1.0");
-
-  // Set callback
-  usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
-
-  // Set disk size, block size should be 512 regardless of spi flash page size
-  usb_msc.setCapacity(flash.pageSize()*flash.numPages()/512, 512);
-
-  // MSC is ready for read/write
-  usb_msc.setUnitReady(true);
-
-  usb_msc.begin();
-
-
-  interfaces.setup();
-  interfaces.startMsg("Multi-Flash");
-
-  mounted = false;
-  changed = false;
-
+void noteFileSystemChange() {
+  changeSettledAt = millis() + 250;
 }
 
-void loop() {
-  if (!mounted) {
-    // First call begin to mount the filesystem.  Check that it returns true
-    // to make sure the filesystem was mounted.
-    if (!fatfs.begin(&flash)) {
-      interfaces.errorMsg("Failed to mount filesystem!");
-      delay(2000);
-      return;
-    }
-    mounted = true;
-    changed = true;
+bool fileSystemChanged() {
+  if (changeSettledAt > 0 && changeSettledAt < millis()) {
+    changeSettledAt = 0;
+    return true;
   }
-
-  if (changed) {
-    changed = false;
-
-    FilesToFlash ftf;
-    ftf.report();
-
-    delay(1000);
-  }
-
-  switch (interfaces.loop()) {
-    case Event::idle:
-      break;
-
-    case Event::startFlash: {
-      interfaces.statusMsg("Starting flash...");
-      delay(1000);
-
-      FilesToFlash ftf;
-      ftf.report();
-
-      FlashManager fm;
-      fm.setup();
-      if (fm.start())
-        if (fm.program(ftf))
-          interfaces.statusMsg("done");
-
-      fm.end();
-
-      break;
-    }
-
-    default:
-      interfaces.errorMsg("Event huh?");
-  }
+  return false;
 }
 
-
+bool fileSystemChanging() {
+  return changeSettledAt > 0;
+}
 
 
 
@@ -730,9 +662,95 @@ void msc_flush_cb (void)
   // clear file system's cache to force refresh
   fatfs.cacheClear();
 
-  changed = true;
+  noteFileSystemChange();
 
   digitalWrite(LED_BUILTIN, LOW);
+}
+
+
+void setupMSC() {
+  // Set disk vendor id, product id and revision with string up to 8, 16, 4 characters respectively
+  usb_msc.setID("e.k", "Multi-Flash", "1.0");
+
+  // Set callback
+  usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
+
+  // Set disk size, block size should be 512 regardless of spi flash page size
+  usb_msc.setCapacity(flash.pageSize()*flash.numPages()/512, 512);
+
+  // MSC is ready for read/write
+  usb_msc.setUnitReady(true);
+
+  usb_msc.begin();
+}
+
+
+
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
+
+void setup() {
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  // Initialize flash library and check its chip ID.
+  if (!flash.begin()) {
+    interfaces.errorMsg("Failed to initialize flash chip!");
+    while(1);
+  }
+
+  setupMSC();
+
+  interfaces.setup();
+  interfaces.startMsg("Multi-Flash");
+}
+
+void loop() {
+  if (!mounted) {
+    // First call begin to mount the filesystem.  Check that it returns true
+    // to make sure the filesystem was mounted.
+    if (!fatfs.begin(&flash)) {
+      interfaces.errorMsg("Failed to mount filesystem!");
+      delay(2000);
+      return;
+    }
+    mounted = true;
+    noteFileSystemChange();
+  }
+
+  if (fileSystemChanged()) {
+    FilesToFlash ftf;
+    ftf.report();
+  }
+
+  switch (interfaces.loop()) {
+    case Event::idle:
+      break;
+
+    case Event::startFlash: {
+
+      if (fileSystemChanging())
+        break; // don't flash if FS is still being written!
+
+      interfaces.statusMsg("Starting flash...");
+      delay(1000);
+
+      FilesToFlash ftf;
+      ftf.report();
+
+      FlashManager fm;
+      fm.setup();
+      if (fm.start())
+        if (fm.program(ftf))
+          interfaces.statusMsg("done");
+
+      fm.end();
+
+      break;
+    }
+
+    default:
+      interfaces.errorMsg("Event huh?");
+  }
 }
 
 

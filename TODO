@@ -1,34 +1,40 @@
 
 
-== BAISC FEATURES ==
+== A ==
 
 
-[] only seek files after a few seconds of flash updates stop
-    [] and force a flush
+[x] only seek files after a few seconds of flash updates stop
+    [-] and force a flush  -- already done in the msc callback
     [] clear error/status on rescan
+    [] error if no boot
+        - since that is currently required
 
-[] error if no boot
-    - since that is currently required
+[] Eject button
+    - is this even possible? perhaps just sync button
 
-
-[] Indicators
-    [] what
-        [] waiting
-        [] percentage complete
-        [] percentage verified
-        [] done
-    [] how
-        [] OLED
-        [] 10 RGB leds
-        [] red LED
-        [] speaker
+[] progress bar
+    [] write & verified
+    - okay to have one bar for both
 
 [] reset line is funky?
 
+[] reset target after flashing?
 
-== FUTURE ===
+== B ===
 
-[] Eject button
+
+[] LED Interface
+    - flutter while writing & verifying
+    - on full when done
+    - slow blink if error?
+
+[] CPX Interface
+    - Speaker Interface
+        - tick while writing & verifying
+        - beep on done
+        - buzz on error
+    - NeoPixels as progress bar
+    - NeoPixels as error
 
 [] formats flash as FAT (compatible with CircuitPython we hope)
 	[] writes all the needed stuff to keep mac happy
@@ -37,8 +43,11 @@
 	        make_empty_file(&vfs_fat->fatfs, "/.Trashes");
 	        make_empty_file(&vfs_fat->fatfs, "/.fseventsd/no_log");
     [] volume name
-[] format flash if button down on boot
+    [] format flash if button down on boot
 
+
+
+== FUTURE ===
 
 [] connector ground for sensing connection (don't forget to pause)
 
