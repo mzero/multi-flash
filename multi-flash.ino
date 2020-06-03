@@ -411,6 +411,7 @@ struct FilesToFlash {
 
   void report();
 
+  bool okayToFlash();
   size_t imageSize();
   void rewind();
   int readNextBlock(uint8_t* buf, size_t blockSize);
@@ -450,6 +451,10 @@ FilesToFlash::FilesToFlash() {
     interfaces.errorMsg("root openNext failed");
   }
   root.close();
+
+  if (!bootFile.isOpen()) {
+    interfaces.errorMsg("no boot .bin file found");
+  }
 }
 
 FilesToFlash::~FilesToFlash() {
@@ -467,6 +472,10 @@ bool FilesToFlash::matchBinFileName(const char* prefix, FatFile& file) {
   return
     nameStr.startsWith(prefix)
     && nameStr.endsWith(".bin");
+}
+
+bool FilesToFlash::okayToFlash() {
+  return bootFile.isOpen();
 }
 
 size_t FilesToFlash::imageSize() {
@@ -796,6 +805,8 @@ void loop() {
 
       FilesToFlash ftf;
       ftf.report();
+      if (!ftf.okayToFlash())
+        break;
 
       interfaces.statusMsg("Starting flash...");
       delay(1000);
