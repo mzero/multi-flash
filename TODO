@@ -18,7 +18,7 @@
     [] volume name
     [] format flash if button down on boot
 
-[] Handle bug in DAP error output (where it give ")" as the error)
+[x] Handle bug in DAP error output (where it give ")" as the error)
 
 
 == B ===

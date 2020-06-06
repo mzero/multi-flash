@@ -35,12 +35,13 @@ namespace {
   }
 
   Flasher::~Flasher() {
-    dap.dap_set_clock(50);
-    dap.deselect();
-    dap.dap_disconnect();   // errors in this case are irrelevant
-
     if (current == this)
       current = NULL;
+       // cleared first, as we don't report errors at this point
+
+    dap.dap_set_clock(50);
+    dap.deselect();
+    dap.dap_disconnect();
   }
 
   bool Flasher::start() {
@@ -58,7 +59,10 @@ namespace {
 
       uint32_t dsu_did;
       if (! dap.select(&dsu_did)) {
-        intf.errorMsgf("Unknown device 0x%x", dsu_did);
+        if (dsu_did == 0)
+          intf.errorMsg("No target device connected");
+        else
+          intf.errorMsgf("Unknown device 0x%x", dsu_did);
         return false;
       }
       intf.statusMsgf(
@@ -145,6 +149,12 @@ namespace {
   }
 
   void Flasher::error(const char* text) {
+    if (strcmp(text, ")") == 0) {
+      // The DAP library prints some error messages directly to Serial, except
+      // for the closing ')' which it prints by calling the error function.
+      Serial.println(text); // clean up the Serial output
+      text = "invalid response";
+    }
     if (current) {
       // should handle the absurd ")" case
       current->intf.errorMsgf("DAP error: %s", text);
