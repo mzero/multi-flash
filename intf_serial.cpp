@@ -2,20 +2,29 @@
 
 #include <Arduino.h>
 
+
+#define MF_WAIT_FOR_SERIAL
+
 namespace {
+
+  void ready() {
+    // Do this on demand, not in setup, otherwise, the USB system will come
+    // up before other descriptors have in been added.
+    #ifdef MF_WAIT_FOR_SERIAL
+        while (!Serial) {
+          delay(100);
+        }
+    #endif
+  }
 
   class SerialInterface : public InterfaceBase {
   public:
     void setup() {
       Serial.begin(115200);
-  #ifdef MF_WAIT_FOR_SERIAL
-      while (!Serial) {
-        delay(100);
-      }
-  #endif
     }
 
     void startMsg(const char* msg) {
+      ready();
       Serial.println();
       Serial.println();
       Serial.println(msg);
@@ -25,10 +34,12 @@ namespace {
     }
 
     void statusMsg(const char* msg) {
+      ready();
       Serial.println(msg);
     }
 
     void errorMsg(const char* msg) {
+      ready();
       Serial.print("** ");
       Serial.println(msg);
     }
@@ -37,6 +48,8 @@ namespace {
       size_t bootSize, const char* bootName,
       size_t appSize, const char* appName)
     {
+      ready();
+
       if (bootSize > 0) Serial.printf("> boot: %3dk %s\n", sizeInK(bootSize), bootName);
       else              Serial.printf("> boot: ---  no binary\n");
 
@@ -50,6 +63,8 @@ namespace {
 
   public:
     void progress(Burn phase, size_t done, size_t size) {
+      ready();
+
       if (phase != progressPhase) {
         progressPhase = phase;
         progressPct = 0;

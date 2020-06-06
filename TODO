@@ -2,8 +2,6 @@
 
 == A ==
 
-[] reset line is funky?
-[] reset target after flashing?
 [] move FlashManager start/end to be ctor/dtor
 
 == B ===
@@ -30,6 +28,9 @@
     [] volume name
     [] format flash if button down on boot
 
+
+[] reset line is funky?
+[] reset target after flashing?
 
 
 == FUTURE ===
