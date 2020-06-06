@@ -2,8 +2,7 @@
 
 #include <Arduino.h>
 
-
-#define MF_WAIT_FOR_SERIAL
+#include "config.h"
 
 namespace {
 
