@@ -37,15 +37,32 @@ devices. It works like this:
 // FEATURE MACROS
 
 #define MF_WAIT_FOR_SERIAL
-#define MF_OLED_FEATHERWING
+//#define MF_OLED_FEATHERWING
 
+// CONFIGURATION MACROS
 
-// CONFIGURAATION MACROS
+#if 0  // enable these to define specific pins
+  #define TARGET_SWDIO 10
+  #define TARGET_SWCLK 11
+  #define TARGET_SWRST 12
+#endif
 
-#define TARGET_SWDIO 10
-#define TARGET_SWCLK 11
-#define TARGET_SWRST 12
+// default pin assignments per board
+#ifdef ADAFRUIT_FEATHER_M0_EXPRESS
+  #ifndef TARGET_SWDIO
+    #define TARGET_SWDIO 10
+    #define TARGET_SWCLK 11
+    #define TARGET_SWRST 12
+  #endif
+#endif
 
+#ifdef ADAFRUIT_CIRCUITPLAYGROUND_M0
+  #ifndef TARGET_SWDIO
+    #define TARGET_SWDIO 6    // labeled A1
+    #define TARGET_SWCLK 9    // labeled A2
+    #define TARGET_SWRST 10   // labeled A3
+  #endif
+#endif
 
 
 
@@ -68,6 +85,9 @@ devices. It works like this:
 #include <Adafruit_SSD1306.h>
 #endif
 
+#ifdef ADAFRUIT_CIRCUITPLAYGROUND_M0
+#include <Adafruit_CircuitPlayground.h>
+#endif
 
 // On-board external flash (QSPI or SPI) macros should already
 // defined in your board variant if supported
@@ -360,6 +380,80 @@ OledFeatherwing oledFetherwing;
 #endif // MF_OLED_FEATHERWING
 
 
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
+
+#ifdef ADAFRUIT_CIRCUITPLAYGROUND_M0
+
+class CircuitPlaygroundInterface : public Interface {
+  void setup() {
+    CircuitPlayground.begin();
+  }
+
+  Event loop() {
+    return CircuitPlayground.leftButton() ? Event::startFlash : Event::idle;
+ }
+
+  void startMsg(const char* msg) {
+    CircuitPlayground.clearPixels();
+    CircuitPlayground.setPixelColor(9, 100, 100, 30);
+  }
+  void statusMsg(const char* msg) { }
+  void errorMsg(const char* msg) {
+    CircuitPlayground.clearPixels();
+    CircuitPlayground.setPixelColor(9, 100, 30, 30);
+  }
+  void clearMsg() {
+    CircuitPlayground.clearPixels();
+  }
+  void binaries(
+    size_t bootSize, const char* bootName,
+    size_t appSize, const char* appName)
+    {
+      CircuitPlayground.clearPixels();
+      if (bootSize > 0)   CircuitPlayground.setPixelColor(0, 30, 100, 30);
+      if (appSize > 0)    CircuitPlayground.setPixelColor(1, 30, 100, 30);
+    }
+
+  void progress(Burn phase, size_t done, size_t size) {
+    int n = (done * 10 + done / 2) / size;
+
+    CircuitPlayground.strip.clear();
+    switch (phase) {
+      case Burn::programming:
+        for (int i = 0; (i + 1) <= n; ++i)
+          CircuitPlayground.strip.setPixelColor(i, 100, 30, 100);
+          break;
+
+      case Burn::verifying:
+        for (int i = 0; (i + 1) <= n; ++i)
+          CircuitPlayground.strip.setPixelColor(i, 100, 50, 30);
+        break;
+
+      case Burn::complete:
+        CircuitPlayground.strip.setPixelColor(4, 100, 100, 100);
+        CircuitPlayground.strip.setPixelColor(5, 100, 100, 100);
+        break;
+    }
+    CircuitPlayground.strip.show();
+
+    if (phase == Burn::complete) {
+      CircuitPlayground.speaker.enable(true);
+      CircuitPlayground.playTone(180, 200, true);
+      CircuitPlayground.playTone(240, 100, true);
+      CircuitPlayground.playTone(360, 100, true);
+      CircuitPlayground.playTone(240, 200, true);
+      CircuitPlayground.speaker.enable(false);
+    }
+  }
+
+};
+
+CircuitPlaygroundInterface circuitPlaygroundInterface;
+
+#endif // ADAFRUIT_CIRCUITPLAYGROUND_M0
+
+
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
 
 class InterfaceList : public Interface {
 public:
@@ -393,6 +487,9 @@ InterfaceList interfaces({
   &serialInterface,
 #ifdef MF_OLED_FEATHERWING
   &oledFetherwing,
+#endif
+#ifdef ADAFRUIT_CIRCUITPLAYGROUND_M0
+  &circuitPlaygroundInterface,
 #endif
 });
 

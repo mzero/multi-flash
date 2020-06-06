@@ -2,17 +2,6 @@
 
 == A ==
 
-
-[x] only seek files after a few seconds of flash updates stop
-    [-] and force a flush  -- already done in the msc callback
-    [x] clear error/status on rescan
-    [x] error if no boot
-        - since that is currently required
-
-[x] progress bar
-    [x] write & verified
-    - okay to have one bar for both
-
 [] reset line is funky?
 [] reset target after flashing?
 [] move FlashManager start/end to be ctor/dtor
@@ -25,13 +14,12 @@
     - on full when done
     - slow blink if error?
 
-[] CPX Interface
+[-] CPX Interface
     - Speaker Interface
-        - tick while writing & verifying
-        - beep on done
+        [-] beep on done
         - buzz on error
-    - NeoPixels as progress bar
-    - NeoPixels as error
+    [-] NeoPixels as progress bar
+    [-] NeoPixels as error
 
 [] formats flash as FAT (compatible with CircuitPython we hope)
 	[] writes all the needed stuff to keep mac happy
@@ -69,4 +57,7 @@
 
 [?] Eject button
     - doesn't seem possible in the API given
+
+[] lock boot area after burn with fuses?
+
 
