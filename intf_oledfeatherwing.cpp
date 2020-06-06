@@ -135,7 +135,7 @@ namespace {
     }
   };
 
-  OledFeatherwing oledFetherwingInterface_;
+  OledFeatherwing oledFeatherwingInterface_;
 }
 
-Interface& oledFetherwingInterface = oledFetherwingInterface_;
+Interface& oledFeatherwingInterface = oledFeatherwingInterface_;

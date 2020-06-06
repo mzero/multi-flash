@@ -77,7 +77,7 @@ devices. It works like this:
 #include "interface.h"
 #include "intf_serial.h"
 #ifdef MF_OLED_FEATHERWING
-  #include "intf_oldefeatherwing.h"
+  #include "intf_oledfeatherwing.h"
 #endif
 #ifdef ADAFRUIT_CIRCUITPLAYGROUND_M0
   #include "intf_circuitplayground.h"
@@ -94,7 +94,7 @@ devices. It works like this:
 InterfaceList interfaces({
   &serialInterface,
 #ifdef MF_OLED_FEATHERWING
-  &oledFetherwingInterface,
+  &oledFeatherwingInterface,
 #endif
 #ifdef ADAFRUIT_CIRCUITPLAYGROUND_M0
   &circuitPlaygroundInterface,
