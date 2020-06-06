@@ -7,7 +7,7 @@
 #include <Adafruit_DAP.h>
 #include <Adafruit_SPIFlash.h>
 #include <Adafruit_TinyUSB.h>
-
+#include <Adafruit_SleepyDog.h>
 
 namespace {
 
@@ -30,7 +30,6 @@ namespace {
 
   Adafruit_USBD_MSC usb_msc;
 
-  bool mounted = false;
   uint32_t changeSettledAt = 0;
 
   void noteFileSystemChange() {
@@ -85,6 +84,120 @@ namespace {
 
 }
 
+/* -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- */
+// Formatting via elm-chan's fatfs code
+
+namespace elm_chan_fatfs {
+
+  #include "elm-chan/ff.c"
+  // This pulls in the required elm-chan fatfs code. It is done like this to
+  // keep it isolated as much as possible.
+
+  extern "C"
+  {
+
+    DSTATUS disk_status ( BYTE pdrv )
+    {
+      (void) pdrv;
+      return 0;
+    }
+
+    DSTATUS disk_initialize ( BYTE pdrv )
+    {
+      (void) pdrv;
+      return 0;
+    }
+
+    DRESULT disk_read (
+      BYTE pdrv,    /* Physical drive nmuber to identify the drive */
+      BYTE *buff,   /* Data buffer to store read data */
+      DWORD sector, /* Start sector in LBA */
+      UINT count    /* Number of sectors to read */
+    )
+    {
+      (void) pdrv;
+      return flash.readBlocks(sector, buff, count) ? RES_OK : RES_ERROR;
+    }
+
+    DRESULT disk_write (
+      BYTE pdrv,      /* Physical drive nmuber to identify the drive */
+      const BYTE *buff, /* Data to be written */
+      DWORD sector,   /* Start sector in LBA */
+      UINT count      /* Number of sectors to write */
+    )
+    {
+      (void) pdrv;
+      return flash.writeBlocks(sector, buff, count) ? RES_OK : RES_ERROR;
+    }
+
+    DRESULT disk_ioctl (
+      BYTE pdrv,    /* Physical drive nmuber (0..) */
+      BYTE cmd,   /* Control code */
+      void *buff    /* Buffer to send/receive control data */
+    )
+    {
+      (void) pdrv;
+
+      switch ( cmd )
+      {
+        case CTRL_SYNC:
+          flash.syncBlocks();
+          return RES_OK;
+
+        case GET_SECTOR_COUNT:
+          *((DWORD*) buff) = flash.size()/512;
+          return RES_OK;
+
+        case GET_SECTOR_SIZE:
+          *((WORD*) buff) = 512;
+          return RES_OK;
+
+        case GET_BLOCK_SIZE:
+          *((DWORD*) buff) = 8;    // erase block size in units of sector size
+          return RES_OK;
+
+        default:
+          return RES_PARERR;
+      }
+    }
+
+  }
+
+  bool format(Interface& intf) {
+
+    FATFS elmchamFatfs;
+    uint8_t workbuf[4096]; // Working buffer for f_fdisk function.
+
+    FRESULT r = f_mkfs("", FM_FAT | FM_SFD, 0, workbuf, sizeof(workbuf));
+    if (r != FR_OK) {
+      intf.errorMsgf("format mkfs error %d", r);
+      return false;
+    }
+
+    // mount to set disk label
+    r = f_mount(&elmchamFatfs, "0:", 1);
+    if (r != FR_OK) {
+      intf.errorMsgf("format mount error %d", r);
+      return false;
+    }
+
+    // Setting label
+    r = f_setlabel("MultiFlash");
+    if (r != FR_OK) {
+      intf.errorMsgf("format label error %d", r);
+      return false;
+    }
+
+    // unmount
+    f_unmount("0:");
+
+    // sync to make sure all data is written to flash
+    flash.syncBlocks();
+
+    return true;
+  }
+}
+
 namespace FileManager {
 
   bool setup(Interface& intf) {
@@ -92,6 +205,19 @@ namespace FileManager {
       intf.errorMsg("Failed to initialize flash chip.");
       return false;
     }
+
+    if (!fatfs.begin(&flash)) {
+      intf.statusMsg("Formatting internal flash");
+
+      if (!elm_chan_fatfs::format(intf))
+        return false;
+
+      intf.statusMsg("Done, resetting....");
+      Watchdog.enable(2000);
+      delay(3000);
+    }
+
+    noteFileSystemChange();
 
     if (!setupMSC()) {
       intf.errorMsg("Failed to setup USB drive.");
@@ -102,17 +228,6 @@ namespace FileManager {
   }
 
   bool loop(Interface& intf) {
-    if (!mounted) {
-      if (!fatfs.begin(&flash)) {
-        intf.errorMsg("Failed to mount filesystem!");
-        delay(2000);
-        return false;
-      }
-
-      mounted = true;
-      noteFileSystemChange();
-    }
-
     return true;
   }
 }
