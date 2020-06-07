@@ -54,6 +54,8 @@ namespace {
 
       if (appSize > 0)  Serial.printf("> app:  %3dk %s\n", sizeInK(appSize), appName);
       else              Serial.printf("> app:  ---  no binary\n");
+
+      Serial.println();
     }
 
   private:
