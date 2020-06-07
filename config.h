@@ -3,8 +3,12 @@
 
 // FEATURE MACROS
 
-#define MF_WAIT_FOR_SERIAL
+// #define MF_WAIT_FOR_SERIAL
+  // This is useful for debugging this code, or if that is your only
+  // interface to the programmer.
+
 #define MF_OLED_FEATHERWING
+  // Comment out if you don't have such a display.
 
 // CONFIGURATION MACROS
 
