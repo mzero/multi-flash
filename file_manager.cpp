@@ -163,41 +163,46 @@ namespace elm_chan_fatfs {
 
   }
 
+  bool checkFR(Interface& intf, const char* opstr, FRESULT r) {
+    if (r != FR_OK) {
+      intf.errorMsgf("%s (err %d)", opstr, r);
+      return true;
+    }
+    intf.statusMsgf("%s good", opstr);
+    return false;
+  }
+
   bool format(Interface& intf) {
 
     FATFS elmchamFatfs;
     uint8_t workbuf[4096]; // Working buffer for f_fdisk function.
 
-    FRESULT r = f_mkfs("", FM_FAT | FM_SFD, 0, workbuf, sizeof(workbuf));
-    if (r != FR_OK) {
-      intf.errorMsgf("format mkfs error %d", r);
+    if (checkFR(intf, "mkfs",
+        f_mkfs("", FM_FAT | FM_SFD, 0, workbuf, sizeof(workbuf))))
       return false;
-    }
 
-    // mount to set disk label
-    r = f_mount(&elmchamFatfs, "0:", 1);
-    if (r != FR_OK) {
-      intf.errorMsgf("format mount error %d", r);
-      return false;
-    }
-
-    // Setting label
-    r = f_setlabel("MultiFlash");
-    if (r != FR_OK) {
-      intf.errorMsgf("format label error %d", r);
-      return false;
-    }
-
-    // unmount
-    f_unmount("0:");
-
-    // sync to make sure all data is written to flash
-    flash.syncBlocks();
+    if (checkFR(intf, "mount", f_mount(&elmchamFatfs, "", 1)))   return false;
+    if (checkFR(intf, "label", f_setlabel("MultiFlash")))        return false;
+    if (checkFR(intf, "unmount", f_unmount("")))                 return false;
 
     return true;
   }
 }
 
+namespace {
+  bool checkSD(Interface& intf, const char* opstr, bool r) {
+    if (!r)
+      intf.errorMsgf("error in %s", opstr);
+    else
+      intf.statusMsgf("%s good", opstr);
+    return !r;
+  }
+
+  bool touch(const char* path) {
+    FatFile file;
+    return file.open(fatfs.vwd(), path, FILE_WRITE);
+  }
+}
 namespace FileManager {
 
   bool setup(Interface& intf) {
@@ -212,10 +217,27 @@ namespace FileManager {
       if (!elm_chan_fatfs::format(intf))
         return false;
 
+      // sync to make sure all data is written to flash
+      flash.syncBlocks();
+
+      if (!fatfs.begin(&flash)) {
+        intf.statusMsg("Format failure");
+        return false;
+      }
+
+      if (checkSD(intf, "mkdir", fatfs.mkdir("/.fseventsd")))         return false;
+      if (checkSD(intf, "touch 1", touch("/.fseventsd/no_log")))      return false;
+      if (checkSD(intf, "touch 2", touch("/.metadata_never_index")))  return false;
+      if (checkSD(intf, "touch 3", touch("/.Trashes")))               return false;
+
+      // sync to make sure all data is written to flash
+      flash.syncBlocks();
+
       intf.statusMsg("Done, resetting....");
       Watchdog.enable(2000);
       delay(3000);
     }
+
 
     noteFileSystemChange();
 
