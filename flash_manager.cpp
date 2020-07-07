@@ -111,7 +111,8 @@ namespace {
     uint8_t bufFile[BUFSIZE];
     uint8_t bufFlash[BUFSIZE];
 
-    dap.erase();
+    // dap.erase();
+    // intf.statusMsg("chip erased");
 
     auto imageSize = ftf.imageSize();
     auto startAddr = dap.program_start();
@@ -126,7 +127,11 @@ namespace {
       }
       if (r == 0)
         break;
-      dap.programBlock(addr, bufFile);
+
+      dap.readBlock(addr, bufFlash);
+      if (memcmp(bufFile, bufFlash, r) != 0) {
+        dap.programBlock(addr, bufFile);
+      }
 
       addr += sizeof(bufFile);  // must be in BUFSIZE chunks due to auto write
       intf.progress(Burn::programming, addr, imageSize);
