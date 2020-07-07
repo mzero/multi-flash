@@ -7,6 +7,40 @@
 
 namespace {
 
+  void hexdumpdiff(const char* labelA, const char* labelB,
+      const uint8_t* bufA, const uint8_t* bufB,
+      size_t addr, size_t len) {
+    // used when debugging
+    auto end = addr + len;
+
+    while (addr < end) {
+      auto rowCount = min(16, end - addr);
+
+      if (memcmp(bufA, bufB, rowCount) != 0) {
+        Serial.printf("%06x: %5s  ", addr, labelA);
+        for (auto i = 0; i < rowCount; ++i) {
+          if (i % 16 == 8) Serial.print(' ');
+          Serial.printf(" %02x", bufA[i]);
+        }
+        Serial.printf("\n        %5s  ", labelB);
+        for (auto i = 0; i < rowCount; ++i) {
+          if (i % 16 == 8) Serial.print(' ');
+          Serial.printf(" %02x", bufB[i]);
+        }
+        Serial.print("\n               ");
+        for (auto i = 0; i < rowCount; ++i) {
+          if (i % 16 == 8) Serial.print(' ');
+          Serial.printf(" %s", (bufA[i] == bufB[i]) ? "  " : "**");
+        }
+        Serial.print("\n");
+      }
+
+      addr += rowCount;
+      bufA += rowCount;
+      bufB += rowCount;
+    }
+  }
+
   class Flasher {
     public:
       Flasher(Interface& intf);
@@ -148,14 +182,16 @@ namespace {
       }
       if (r == 0)
         break;
+
       dap.readBlock(addr, bufFlash);
 
       if (memcmp(bufFile, bufFlash, r) != 0) {
         intf.errorMsgf("mismatch @%08x", addr);
+        // hexdumpdiff("file", "flash", bufFile, bufFlash, addr, r);
         return false;
       }
 
-      addr += sizeof(bufFile);  // must be in BUFSIZE chunks due to auto write
+      addr += sizeof(bufFile);
       intf.progress(Burn::verifying, addr, imageSize);
       yield();
     } while (true);
