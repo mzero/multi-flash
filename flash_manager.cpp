@@ -69,17 +69,35 @@ namespace {
         "->%s, %dk", dap.target_device.name, sizeInK(dap.target_device.flash_size));
 
       dap.fuseRead(); // fuse operations don't return a result (!)
-      if (dap._USER_ROW.BOOTPROT != 7 || dap._USER_ROW.LOCK != 0xffff) {
+      intf.statusMsgf("fuses: 0x%08x 0x%08x", dap._USER_ROW.reg32[1], dap._USER_ROW.reg32[0]);
+
+      bool fuseReset = dap._USER_ROW.reg64 == 0xffffffffffffffffUL;
+      if (fuseReset) {
+        // Fuses are all ones, so set to some "reasonable" value.
+        // The value comes from Adafruit's UF2 bootloader.
+        dap._USER_ROW.reg64 = 0xFFFFFC5DD8E0C7FFUL;
+      }
+      bool fuseUnprotect =
+        dap._USER_ROW.bit.BOOTPROT != 7 || dap._USER_ROW.bit.LOCK != 0xffff;
+      if (fuseUnprotect) {
+        dap._USER_ROW.bit.BOOTPROT = 7;   // unprotect the boot area
+        dap._USER_ROW.bit.LOCK = 0xffff;  // unprotect all the regions
+        intf.statusMsgf("fuses set reasonably");
+      }
+      if (fuseReset || fuseUnprotect) {
         if (doAgain) {
-          intf.errorMsgf("unprotection failed");
+          intf.errorMsgf("fuse set failed");
           return false;
         }
 
-        dap._USER_ROW.BOOTPROT = 7;   // unprotect the boot area
-        dap._USER_ROW.LOCK = 0xffff;  // unprotect all the regions
+        if (fuseReset)      intf.statusMsgf("resetting fuses");
+        if (fuseUnprotect)  intf.statusMsgf("unprotecting flash");
+
         dap.fuseWrite();
+        intf.statusMsgf("restarting target");
+
         doAgain = true;
-        intf.statusMsgf("NVRAM now unprotected, resetting");
+
       } else {
         doAgain = false;
       }
@@ -138,6 +156,10 @@ namespace {
     } while (true);
 
     intf.progress(Burn::complete, imageSize, imageSize);
+
+    intf.statusMsgf("protecting boot");
+    dap._USER_ROW.bit.BOOTPROT = 2;   // protect the boot area (8k)
+    dap.fuseWrite();
 
     return true;
   }
