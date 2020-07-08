@@ -2,6 +2,10 @@
 
 == A ==
 
+[] reset target after flashing
+    - doesn't seem to work with the obvious calls
+
+
 [-] CPX Interface
     - Speaker Interface
         [-] beep on done
@@ -9,27 +13,13 @@
     [-] NeoPixels as progress bar
     [-] NeoPixels as error
 
-[x] formats flash as FAT (compatible with CircuitPython we hope)
-    [x] writes all the needed stuff to keep mac happy
-            f_mkdir(&vfs_fat->fatfs, "/.fseventsd");
-            make_empty_file(&vfs_fat->fatfs, "/.metadata_never_index");
-            make_empty_file(&vfs_fat->fatfs, "/.Trashes");
-            make_empty_file(&vfs_fat->fatfs, "/.fseventsd/no_log");
-    [x] volume name
-
-
 == B ===
-
 
 [] LED Interface
     - flutter while writing & verifying
     - on full when done
     - slow blink if error?
 
-
-
-[] reset line is funky?
-[] reset target after flashing?
 
 
 == FUTURE ===
@@ -40,7 +30,7 @@
     [] use of perror_exit is flawed
         - sometimes used when first part of message is after Serial.print() calls
         - expects to exit app (or rather hang app) - so no good for app to continue
-    [] enable programming w/o full chip erase
+    [-] enable programming w/o full chip erase
         - would need program block to use the erase row command (as sort of coded in comments)
     [] lock fuses
         - use temporary unlock commands?
@@ -48,9 +38,13 @@
         - is boot always 8k?
             8k for M0
             16k for M4
-    [] GCC 4.4 warning:
+    [-] GCC 4.4 warning:
         Adafruit_DAP_library/Adafruit_DAP.h:295:40:
         note: offset of packed bit-field 'Adafruit_DAP_SAMx5::<unnamed union>::<unnamed struct>::BOD33_Level' has changed in GCC 4.4
+        These are the NVMCTRL_USER fields - and the code here is crazy!
+        - there are #defs for these fields in the core, but they are very awkward...
+        -- better to just duplicate the kind of register unions the core has for other things
+
 
 [] handle boot binaries that are the "wrong" size for the platform
     - how to know what the right size is?
@@ -59,5 +53,49 @@
     - doesn't seem possible in the API given
 
 [] lock boot area after burn with fuses?
+
+
+=== SAMD21 Fuse procedure ===
+
+fuses[0..1] = read from NVMCTRL_AUX0_ADDRESS
+if all ones, then likely erased with flash, then set to reasonable values:
+        fuses[0] = 0xD8E0C7FF;  // or 0xD8E0C7FA used in UF2?
+        fuses[1] = 0xFFFFFC5D;
+extract current boot protection from fuses[0]
+set to new value (7 on start to flash, 2 on all done)
+if new value is same as old value, and didn't need to set to reasonable
+    - just exit
+insert new boot prot value into fuses[0]
+write them
+reboot "resetIntoApp"
+
+NVM User Row Mapping
+
+addr:   0x804004      0x804000          name        default         "reasonable"
+data:   FF FF FC 5D   D8 E0 C7 FA
+fields:                         7       BOOTPROT    7 (none)        2 (8k)
+                                8       reserved
+                               7        EEPROM      7 (none)
+                               8        reserved
+                            2F          BOD33 lvl   7 (1.75V)       (*)
+                            4           BOD33 en    1
+                          1 8           BOD33 act   1 (reset)
+                       1 FE             reserved    0x70            (**)
+                       2                WDT en      0
+                       C
+
+
+
+
+
+
+
+(*) BOD33 level is actually too low, but the bootloader resets it to 2.7V, which would be value 8
+
+(**) reserved is BOD12 config, and is factory written and shouldn't change - they say default is 0x70... but implies bits should be preserved... none the less, the boot loader doesn't bother, just forces 0x70 on setting to reasonable
+
+
+
+
 
 

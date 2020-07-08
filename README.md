@@ -92,7 +92,7 @@ This code uses the following libraries, and they'll need to be installed
 in your Arduino IDE:
 
 * Adafruit_BusIO
-* Adafruit_DAP_library
+* Adafruit_DAP -- see NOTE below
 * Adafruit_SleepyDog_Library
 * Adafruit_SPIFlash
 * Adafruit_TinyUSB_Library
@@ -106,6 +106,9 @@ Also, if using an OLED Featherwing:
 Also, if compiling for a Circuit Playground:
 
 * Adafruit_Circuit_Playground
+
+NOTE: You'll need the `userrow` branch in my for of Adafruit_DAP, found here:
+	https://github.com/mzero/Adafruit_DAP/tree/userrow
 
 
 ## Credits
