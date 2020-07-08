@@ -205,8 +205,8 @@ namespace {
     intf.statusMsgf("restarting target");
     dap.dap_set_clock(50);
     dap.deselect();
+    if (! dap.dap_reset_target_hw())                return dap_error();
     if (! dap.dap_disconnect())                     return dap_error();
-    // if (! dap.dap_reset_target_hw())                return dap_error();
 
     return true;
   }

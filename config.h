@@ -19,7 +19,7 @@
 #endif
 
 // default pin assignments per board
-#ifdef ADAFRUIT_FEATHER_M0_EXPRESS
+#if defined(ADAFRUIT_FEATHER_M0_EXPRESS) || defined(ADAFRUIT_FEATHER_M4_EXPRESS)
   #ifndef TARGET_SWDIO
     #define TARGET_SWDIO 10
     #define TARGET_SWCLK 11
